@@ -1,0 +1,23 @@
+{
+  "name": "channelbot-clone-js",
+  "version": "0.2.0",
+  "private": true,
+  "description": "ChannelBot-style Discord ticket bot implemented in JavaScript",
+  "license": "SEE LICENSE IN LICENSE",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js",
+    "discord:checklist": "node scripts/discord-checklist.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.4.5",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  }
+}
