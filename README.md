@@ -1,6 +1,6 @@
-# ChannelBot_IK
+# Server_Bot
 
-ChannelBot_IK は、Discord サーバーのチャンネル管理・チケット運用・一時ボイスチャンネル（Join to Create）・ロール管理などを行う Discord Bot です。
+Server_Bot は、Discord サーバーのチャンネル管理・チケット運用・一時ボイスチャンネル（Join to Create）・ロール管理などを行う Discord Bot です。
 
 初めて使う人でも導入しやすいように、この README では **準備 → 起動 → 基本設定 → よく使う機能** の順で説明します。
 
