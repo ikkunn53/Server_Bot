@@ -126,15 +126,15 @@ DB_DAILY_BACKUP_TIME_UTC=18:30
 DB_DAILY_BACKUP_DIR=data/backups
 DB_DAILY_BACKUP_RETENTION_DAYS=14
 TEMP_CHANNEL_CLEANUP_INTERVAL_MS=900000
-PRIVACY_POLICY_URL=https://example.com/privacy
-TERMS_OF_SERVICE_URL=https://example.com/terms
+PRIVACY_POLICY_URL=https://ikkunn53.github.io/Server_Bot/privacy-policy.html
+TERMS_OF_SERVICE_URL=https://ikkunn53.github.io/Server_Bot/terms-of-service.html
 ```
 
 ### Discord Developer Portal のポリシーURL設定
 
-公開Botとして申請する前に、[プライバシーポリシー](docs/privacy-policy.md) と
-[サービス利用規約](docs/terms-of-service.md) の `［　］` を実際の運営情報へ置き換え、Webサイトや
-GitHub Pagesなどへ公開してください。閲覧にログインやアクセス申請が必要なURLは使用できません。
+本リポジトリでは、[プライバシーポリシー](docs/privacy-policy.md) と
+[サービス利用規約](docs/terms-of-service.md) をGitHub Pagesへ自動公開します。`main`または`master`へ
+変更を反映すると、`.github/workflows/pages.yml`が`docs/`をビルドして公開します。
 
 公開後、Discord Developer Portal のアプリケーション設定へ次の2つを登録します。
 
@@ -142,7 +142,16 @@ GitHub Pagesなどへ公開してください。閲覧にログインやアク�
 2. **Terms of Service URL**: 公開したサービス利用規約の絶対URL
 
 同じURLを `.env` の `PRIVACY_POLICY_URL` と `TERMS_OF_SERVICE_URL` に設定すると、ユーザーは
-`/privacy` と `/terms` から確認できます。`example.com` の例示URLのまま公開しないでください。
+`/privacy` と `/terms` から確認できます。
+
+このリポジトリで使用するURLは次のとおりです。
+
+- Privacy Policy URL: `https://ikkunn53.github.io/Server_Bot/privacy-policy.html`
+- Terms of Service URL: `https://ikkunn53.github.io/Server_Bot/terms-of-service.html`
+
+初回のみ、GitHubリポジトリの **Settings → Pages → Build and deployment → Source** で
+**GitHub Actions**を選択してください。Actionsの`Deploy legal pages to GitHub Pages`が成功した後、
+シークレットウィンドウで両方のURLを開けることを確認してからDeveloper Portalへ登録します。
 
 ## データ保存とバックアップ
 
