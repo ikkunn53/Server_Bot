@@ -9,6 +9,7 @@ Server_Bot は、Discord サーバーのチャンネル管理・チケット運�
 - [できること](#できること)
 - [必要なもの](#必要なもの)
 - [Discord Developer Portal 側の準備](#discord-developer-portal-側の準備)
+- [Privileged Gateway Intents の申請](#privileged-gateway-intents-の申請)
 - [インストールと起動](#インストールと起動)
 - [環境変数](#環境変数)
 - [データ保存とバックアップ](#データ保存とバックアップ)
@@ -57,6 +58,14 @@ Server_Bot は、Discord サーバーのチャンネル管理・チケット運�
 
 > 権限が不足していると、一部コマンドが失敗します。まずはテストサーバーで動作確認することをおすすめします。
 
+## Privileged Gateway Intents の申請
+
+Bot が 75 サーバーを超えて認証申請を行う場合は、実装に合わせた回答例と提出前チェックを
+[「Privileged Gateway Intents 申請ガイド」](docs/intents-application-ja.md) にまとめています。
+
+この Bot が使用する特権 Intent は **Server Members Intent** と **Message Content Intent** です。
+**Presence Intent は使用していないため申請しません**。必要最小限の Intent だけを選択してください。
+
 ## インストールと起動
 
 ```bash
@@ -94,6 +103,8 @@ GUILD_ID=テストまたは運用サーバーのID
 | `DISCORD_TOKEN` | はい | なし | Discord Bot Token |
 | `GUILD_ID` | いいえ | なし | 指定するとそのサーバーにギルドコマンドとして即時登録しやすくなります |
 | `LOG_CHANNEL_ID` | いいえ | なし | console ログを転送するテキストチャンネルID |
+| `PRIVACY_POLICY_URL` | 公開時は必須 | なし | ログイン不要で閲覧できるプライバシーポリシーのURL |
+| `TERMS_OF_SERVICE_URL` | 公開時は必須 | なし | ログイン不要で閲覧できるサービス利用規約のURL |
 | `DB_PATH` | いいえ | `data/{guild_id}/channelbot.db` | SQLite DB の保存先。`{guild_id}` を使うとサーバーごとに分離できます |
 | `DB_DAILY_BACKUP_ENABLED` | いいえ | `true` | `false` で日次DBバックアップを無効化 |
 | `DB_DAILY_BACKUP_TIME_UTC` | いいえ | なし | 日次バックアップ時刻。`HH:mm` UTC 形式。未指定なら自動バックアップなし |
@@ -115,7 +126,23 @@ DB_DAILY_BACKUP_TIME_UTC=18:30
 DB_DAILY_BACKUP_DIR=data/backups
 DB_DAILY_BACKUP_RETENTION_DAYS=14
 TEMP_CHANNEL_CLEANUP_INTERVAL_MS=900000
+PRIVACY_POLICY_URL=https://example.com/privacy
+TERMS_OF_SERVICE_URL=https://example.com/terms
 ```
+
+### Discord Developer Portal のポリシーURL設定
+
+公開Botとして申請する前に、[プライバシーポリシー](docs/privacy-policy.md) と
+[サービス利用規約](docs/terms-of-service.md) の `［　］` を実際の運営情報へ置き換え、Webサイトや
+GitHub Pagesなどへ公開してください。閲覧にログインやアクセス申請が必要なURLは使用できません。
+
+公開後、Discord Developer Portal のアプリケーション設定へ次の2つを登録します。
+
+1. **Privacy Policy URL**: 公開したプライバシーポリシーの絶対URL
+2. **Terms of Service URL**: 公開したサービス利用規約の絶対URL
+
+同じURLを `.env` の `PRIVACY_POLICY_URL` と `TERMS_OF_SERVICE_URL` に設定すると、ユーザーは
+`/privacy` と `/terms` から確認できます。`example.com` の例示URLのまま公開しないでください。
 
 ## データ保存とバックアップ
 

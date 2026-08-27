@@ -22,6 +22,8 @@ const token = process.env.DISCORD_TOKEN;
 const guildId = process.env.GUILD_ID || null;
 const dbPath = process.env.DB_PATH || 'data/{guild_id}/channelbot.db';
 const logChannelId = process.env.LOG_CHANNEL_ID || null;
+const privacyPolicyUrl = process.env.PRIVACY_POLICY_URL || null;
+const termsOfServiceUrl = process.env.TERMS_OF_SERVICE_URL || null;
 const dailyDbBackupEnabled = process.env.DB_DAILY_BACKUP_ENABLED !== 'false';
 const dailyDbBackupDir = process.env.DB_DAILY_BACKUP_DIR || 'data/backups';
 const dailyDbBackupRetentionDays = Math.max(1, Number.parseInt(process.env.DB_DAILY_BACKUP_RETENTION_DAYS || '14', 10) || 14);
@@ -259,6 +261,7 @@ const baseCommands = [
   new SlashCommandBuilder().setName('support').setDescription('サポート案内を表示します'),
   new SlashCommandBuilder().setName('dashboard').setDescription('ダッシュボード機能の案内を表示します'),
   new SlashCommandBuilder().setName('privacy').setDescription('プライバシーポリシーと利用規約の案内を表示します'),
+  new SlashCommandBuilder().setName('terms').setDescription('サービス利用規約の案内を表示します'),
   new SlashCommandBuilder()
     .setName('prefix')
     .setDescription('コマンド接頭辞（prefix）の案内を表示します')
@@ -2983,7 +2986,21 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (interaction.commandName === 'privacy') {
-    await interaction.reply({ content: `このクローンには専用のプライバシーポリシーURLはありません。必要な場合は運営サーバーのルール/ポリシーチャンネルを案内してください。\n制作者: ${BOT_CREATOR}`, ephemeral: true });
+    const links = [
+      privacyPolicyUrl ? `プライバシーポリシー: ${privacyPolicyUrl}` : 'プライバシーポリシー: 未設定（PRIVACY_POLICY_URL を設定してください）',
+      termsOfServiceUrl ? `サービス利用規約: ${termsOfServiceUrl}` : 'サービス利用規約: 未設定（TERMS_OF_SERVICE_URL を設定してください）',
+    ];
+    await interaction.reply({ content: `${links.join('\n')}\n制作者: ${BOT_CREATOR}`, ephemeral: true });
+    return;
+  }
+
+  if (interaction.commandName === 'terms') {
+    await interaction.reply({
+      content: termsOfServiceUrl
+        ? `サービス利用規約: ${termsOfServiceUrl}`
+        : 'サービス利用規約URLが未設定です。運営者は TERMS_OF_SERVICE_URL を設定してください。',
+      ephemeral: true,
+    });
     return;
   }
 
