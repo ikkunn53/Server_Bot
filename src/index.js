@@ -265,7 +265,6 @@ const baseCommands = [
     .addStringOption((option) => option.setName('command').setDescription('詳細を見たいコマンド名（例: lock）').setRequired(false)),
   new SlashCommandBuilder().setName('invite').setDescription('Bot招待に関する案内を表示します'),
   new SlashCommandBuilder().setName('support').setDescription('サポート案内を表示します'),
-  new SlashCommandBuilder().setName('dashboard').setDescription('ダッシュボード機能の案内を表示します'),
   new SlashCommandBuilder().setName('privacy').setDescription('プライバシーポリシーと利用規約の案内を表示します'),
   new SlashCommandBuilder().setName('terms').setDescription('サービス利用規約の案内を表示します'),
   new SlashCommandBuilder()
@@ -812,8 +811,8 @@ const implementedCommandNames = new Set([
   'help',
   'invite',
   'support',
-  'dashboard',
   'privacy',
+  'terms',
   'prefix',
   'debug',
   'lock',
@@ -3074,7 +3073,7 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'help') {
     const requested = interaction.options.getString('command', false)?.replace(/^\//, '').trim();
     if (!requested) {
-      await interaction.reply({ content: '主なコマンド: /ping /help /invite /support /dashboard /privacy /lock /unlock /hide /show /slowmode /settopic /rename /purge /createchannel /clone /delete /poll /serverinfo /channelinfo /userinfo /roleinfo /settings /permissions /stats /premium /play とチケット系コマンド', ephemeral: true });
+      await interaction.reply({ content: '主なコマンド: /ping /help /invite /support /privacy /terms /lock /unlock /hide /show /slowmode /settopic /rename /purge /createchannel /clone /delete /poll /serverinfo /channelinfo /userinfo /roleinfo /settings /permissions /stats /premium /play とチケット系コマンド', ephemeral: true });
       return;
     }
     const found = commands.find((command) => command.name === requested);
@@ -3097,11 +3096,6 @@ client.on('interactionCreate', async (interaction) => {
 
   if (interaction.commandName === 'support') {
     await interaction.reply({ content: `サポート用チャンネルまたはサポートサーバーの案内を管理者が設定してください。\n制作者: ${BOT_CREATOR}`, ephemeral: true });
-    return;
-  }
-
-  if (interaction.commandName === 'dashboard') {
-    await interaction.reply({ content: 'このクローンにはWebダッシュボード機能はありません。コマンドで設定してください。', ephemeral: true });
     return;
   }
 

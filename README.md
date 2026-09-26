@@ -222,7 +222,7 @@ Bot が応答すれば起動できています。
 | `/invite` | Bot 招待案内 |
 | `/support` | サポート案内 |
 | `/privacy` | プライバシー案内 |
-| `/dashboard` | ダッシュボード案内 |
+| `/terms` | サービス利用規約の案内 |
 
 ### チャンネル管理
 
@@ -425,7 +425,7 @@ Join to Create で作成された一時VCでは、作成者本人または Disco
 - `/invite`
 - `/support`
 - `/privacy`
-- `/dashboard`
+- `/terms`
 - `/serverinfo`
 - `/channelinfo`
 - `/userinfo`
