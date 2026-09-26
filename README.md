@@ -28,6 +28,7 @@ Server_Bot は、Discord サーバーのチャンネル管理・チケット運�
 - Join to Create 方式で、一時ボイスチャンネルを自動作成・自動削除できます。
 - 空の一時VCが残った場合の自動掃除・手動掃除・状態診断ができます。
 - ボイスチャンネル参加通知（`/voicelink`）を設定できます。
+- VC退出後15秒間の再参加を防止し、3分以内に2回退出したメンバーへ5分間のタイムアウトを付与します（一時VC作成時のBotによる移動は対象外です）。
 - ウェルカムメッセージ、自動ロール、ボタンロール、リアクションロールなどを管理できます。
 - SQLite に設定やチケット情報を保存します。
 
@@ -50,6 +51,7 @@ Server_Bot は、Discord サーバーのチャンネル管理・チケット運�
    - Manage Channels
    - Manage Roles
    - Manage Messages
+   - Moderate Members（VC退出回数によるタイムアウトを使う場合）
    - View Channels
    - Send Messages
    - Read Message History
