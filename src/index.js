@@ -82,6 +82,10 @@ const VOICE_LINK_CACHE_TTL_MS = Math.max(
   1_000,
   Number.parseInt(process.env.VOICE_LINK_CACHE_TTL_MS || '30000', 10) || 30000,
 );
+const VOICE_REJOIN_COOLDOWN_MS = 15 * 1000;
+const VOICE_DEPARTURE_WINDOW_MS = 3 * 60 * 1000;
+const VOICE_DEPARTURE_TIMEOUT_MS = 5 * 60 * 1000;
+const BOT_VOICE_TRANSITION_TTL_MS = 30 * 1000;
 const BOT_CREATOR = 'IKKUNN53';
 
 const pendingTempChannelDeleteTimers = new Map();
@@ -89,6 +93,8 @@ const tempVoiceConfigCache = new Map();
 const tempVoiceOwnerChannelIdCache = new Map();
 const voiceLinkCache = new Map();
 const tempVoiceMetricsMap = new Map();
+const pendingBotVoiceTransitions = new Map();
+const voiceDepartureOperationQueues = new Map();
 let tempChannelCleanupInterval = null;
 let isCleaningTempChannels = false;
 
@@ -259,7 +265,6 @@ const baseCommands = [
     .addStringOption((option) => option.setName('command').setDescription('詳細を見たいコマンド名（例: lock）').setRequired(false)),
   new SlashCommandBuilder().setName('invite').setDescription('Bot招待に関する案内を表示します'),
   new SlashCommandBuilder().setName('support').setDescription('サポート案内を表示します'),
-  new SlashCommandBuilder().setName('dashboard').setDescription('ダッシュボード機能の案内を表示します'),
   new SlashCommandBuilder().setName('privacy').setDescription('プライバシーポリシーと利用規約の案内を表示します'),
   new SlashCommandBuilder().setName('terms').setDescription('サービス利用規約の案内を表示します'),
   new SlashCommandBuilder()
@@ -806,8 +811,8 @@ const implementedCommandNames = new Set([
   'help',
   'invite',
   'support',
-  'dashboard',
   'privacy',
+  'terms',
   'prefix',
   'debug',
   'lock',
@@ -942,6 +947,15 @@ CREATE TABLE IF NOT EXISTS guild_settings (
   value TEXT,
   PRIMARY KEY (guild_id, key)
 );
+
+CREATE TABLE IF NOT EXISTS voice_departures (
+  guild_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  departed_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_departures_member
+  ON voice_departures(guild_id, user_id, departed_at);
 `;
 
 const dbConnectionMap = new Map();
@@ -995,6 +1009,75 @@ async function closeAllDbs() {
       console.warn('failed to close sqlite connection', error);
     }
   }));
+}
+
+function getVoiceTransitionKey(guildIdValue, userId, oldChannelId, newChannelId) {
+  return `${guildIdValue}:${userId}:${oldChannelId || 'none'}:${newChannelId || 'none'}`;
+}
+
+function markBotVoiceTransition(guildIdValue, userId, oldChannelId, newChannelId) {
+  const key = getVoiceTransitionKey(guildIdValue, userId, oldChannelId, newChannelId);
+  pendingBotVoiceTransitions.set(key, Date.now() + BOT_VOICE_TRANSITION_TTL_MS);
+}
+
+function consumeBotVoiceTransition(guildIdValue, userId, oldChannelId, newChannelId) {
+  const now = Date.now();
+  const key = getVoiceTransitionKey(guildIdValue, userId, oldChannelId, newChannelId);
+  const expiresAt = pendingBotVoiceTransitions.get(key);
+  pendingBotVoiceTransitions.delete(key);
+
+  if (pendingBotVoiceTransitions.size > 1000) {
+    for (const [pendingKey, pendingExpiresAt] of pendingBotVoiceTransitions) {
+      if (pendingExpiresAt <= now) pendingBotVoiceTransitions.delete(pendingKey);
+    }
+  }
+
+  return Boolean(expiresAt && expiresAt > now);
+}
+
+async function getVoiceRejoinCooldownRemaining(guildIdValue, userId, now = Date.now()) {
+  const db = await getDb(guildIdValue);
+  const latest = await db.get(
+    'SELECT MAX(departed_at) AS departed_at FROM voice_departures WHERE guild_id = ? AND user_id = ?',
+    guildIdValue,
+    userId,
+  );
+  return Math.max(0, (Number(latest?.departed_at) || 0) + VOICE_REJOIN_COOLDOWN_MS - now);
+}
+
+async function recordVoiceDeparture(guildIdValue, userId, now = Date.now()) {
+  const queueKey = `${guildIdValue}:${userId}`;
+  const previousOperation = voiceDepartureOperationQueues.get(queueKey) || Promise.resolve();
+  const operation = previousOperation.catch(() => null).then(async () => {
+    const db = await getDb(guildIdValue);
+    const windowStartedAt = now - VOICE_DEPARTURE_WINDOW_MS;
+    await db.run(
+      'DELETE FROM voice_departures WHERE guild_id = ? AND user_id = ? AND departed_at < ?',
+      guildIdValue,
+      userId,
+      windowStartedAt,
+    );
+    await db.run(
+      'INSERT INTO voice_departures (guild_id, user_id, departed_at) VALUES (?, ?, ?)',
+      guildIdValue,
+      userId,
+      now,
+    );
+    const result = await db.get(
+      'SELECT COUNT(*) AS count FROM voice_departures WHERE guild_id = ? AND user_id = ?',
+      guildIdValue,
+      userId,
+    );
+    return Number(result?.count || 0) >= 2;
+  });
+  voiceDepartureOperationQueues.set(queueKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (voiceDepartureOperationQueues.get(queueKey) === operation) {
+      voiceDepartureOperationQueues.delete(queueKey);
+    }
+  }
 }
 
 function getNextBackupDate(now = new Date()) {
@@ -2614,6 +2697,38 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 
   const guildIdValue = newState.guild.id;
+  const memberId = newState.member?.id || oldState.member?.id;
+  const isBotVoiceTransition = memberId
+    ? consumeBotVoiceTransition(guildIdValue, memberId, oldState.channelId, newState.channelId)
+    : false;
+
+  if (!isBotVoiceTransition && memberId && !newState.member?.user?.bot && oldState.channelId && !newState.channelId) {
+    const shouldTimeout = await recordVoiceDeparture(guildIdValue, memberId).catch((error) => {
+      logOperationError('voiceStateUpdate.recordVoiceDeparture', error, { guildId: guildIdValue, memberId });
+      return false;
+    });
+    if (shouldTimeout) {
+      await newState.member.timeout(VOICE_DEPARTURE_TIMEOUT_MS, '3分以内にVCから2回退出したため').catch((error) => {
+        logOperationError('voiceStateUpdate.applyVoiceDepartureTimeout', error, { guildId: guildIdValue, memberId });
+      });
+    }
+  }
+
+  if (!isBotVoiceTransition && memberId && !newState.member?.user?.bot && !oldState.channelId && newState.channelId) {
+    const cooldownRemaining = await getVoiceRejoinCooldownRemaining(guildIdValue, memberId).catch((error) => {
+      logOperationError('voiceStateUpdate.getVoiceRejoinCooldown', error, { guildId: guildIdValue, memberId });
+      return 0;
+    });
+    if (cooldownRemaining > 0) {
+      markBotVoiceTransition(guildIdValue, memberId, newState.channelId, null);
+      await newState.disconnect(`VC退出後の再参加待機中（残り${Math.ceil(cooldownRemaining / 1000)}秒）`).catch((error) => {
+        pendingBotVoiceTransitions.delete(getVoiceTransitionKey(guildIdValue, memberId, newState.channelId, null));
+        logOperationError('voiceStateUpdate.enforceVoiceRejoinCooldown', error, { guildId: guildIdValue, memberId });
+      });
+      return;
+    }
+  }
+
   const tempVoiceConfig = await getTempVoiceConfig(guildIdValue);
 
   if (tempVoiceConfig.enabled) {
@@ -2650,7 +2765,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
           });
         });
         addTempVoiceOwnerChannelIdToCache(guildIdValue, channel.id);
+        markBotVoiceTransition(guildIdValue, newState.member.id, newState.channelId, channel.id);
         await newState.setChannel(channel).catch((error) => {
+          pendingBotVoiceTransitions.delete(
+            getVoiceTransitionKey(guildIdValue, newState.member.id, newState.channelId, channel.id),
+          );
           metrics.moveFailures += 1;
           logOperationError('voiceStateUpdate.moveToTempChannel', error, {
             guildId: guildIdValue,
@@ -2954,7 +3073,7 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.commandName === 'help') {
     const requested = interaction.options.getString('command', false)?.replace(/^\//, '').trim();
     if (!requested) {
-      await interaction.reply({ content: '主なコマンド: /ping /help /invite /support /dashboard /privacy /lock /unlock /hide /show /slowmode /settopic /rename /purge /createchannel /clone /delete /poll /serverinfo /channelinfo /userinfo /roleinfo /settings /permissions /stats /premium /play とチケット系コマンド', ephemeral: true });
+      await interaction.reply({ content: '主なコマンド: /ping /help /invite /support /privacy /terms /lock /unlock /hide /show /slowmode /settopic /rename /purge /createchannel /clone /delete /poll /serverinfo /channelinfo /userinfo /roleinfo /settings /permissions /stats /premium /play とチケット系コマンド', ephemeral: true });
       return;
     }
     const found = commands.find((command) => command.name === requested);
@@ -2977,11 +3096,6 @@ client.on('interactionCreate', async (interaction) => {
 
   if (interaction.commandName === 'support') {
     await interaction.reply({ content: `サポート用チャンネルまたはサポートサーバーの案内を管理者が設定してください。\n制作者: ${BOT_CREATOR}`, ephemeral: true });
-    return;
-  }
-
-  if (interaction.commandName === 'dashboard') {
-    await interaction.reply({ content: 'このクローンにはWebダッシュボード機能はありません。コマンドで設定してください。', ephemeral: true });
     return;
   }
 
