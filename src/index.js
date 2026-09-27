@@ -83,7 +83,7 @@ const VOICE_LINK_CACHE_TTL_MS = Math.max(
   Number.parseInt(process.env.VOICE_LINK_CACHE_TTL_MS || '30000', 10) || 30000,
 );
 const VOICE_REJOIN_COOLDOWN_MS = 15 * 1000;
-const VOICE_DEPARTURE_WINDOW_MS = 3 * 60 * 1000;
+const VOICE_DEPARTURE_WINDOW_MS = 60 * 1000;
 const VOICE_DEPARTURE_TIMEOUT_MS = 5 * 60 * 1000;
 const BOT_VOICE_TRANSITION_TTL_MS = 30 * 1000;
 const BOT_CREATOR = 'IKKUNN53';
@@ -2708,7 +2708,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       return false;
     });
     if (shouldTimeout) {
-      await newState.member.timeout(VOICE_DEPARTURE_TIMEOUT_MS, '3分以内にVCから2回退出したため').catch((error) => {
+      await newState.member.timeout(VOICE_DEPARTURE_TIMEOUT_MS, '1分以内にVCから2回退出したため').catch((error) => {
         logOperationError('voiceStateUpdate.applyVoiceDepartureTimeout', error, { guildId: guildIdValue, memberId });
       });
     }
