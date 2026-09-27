@@ -4,12 +4,21 @@ import { resolve } from 'node:path';
 const sourcePath = resolve(process.cwd(), 'src/index.js');
 const source = readFileSync(sourcePath, 'utf8');
 
-const commandNamePattern = /new\s+SlashCommandBuilder\(\)\s*(?:\n\s*)?\.setName\('([^']+)'\)/g;
-const commands = new Set();
-
-for (const match of source.matchAll(commandNamePattern)) {
-  commands.add(match[1]);
+function extractBlock(startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  if (start === -1 || end === -1) {
+    throw new Error(`コマンド定義を抽出できません: ${startMarker}`);
+  }
+  return source.slice(start + startMarker.length, end);
 }
+
+const baseCommandsBlock = extractBlock('const baseCommands = [', 'const DISCORD_CHAT_INPUT_COMMAND_LIMIT');
+const extraCommandsBlock = extractBlock('const EXTRA_COMMAND_NAMES = [', '];');
+const baseCommands = [...baseCommandsBlock.matchAll(/new\s+SlashCommandBuilder\(\)\s*\.setName\('([^']+)'\)/g)]
+  .map((match) => match[1]);
+const extraCommands = [...extraCommandsBlock.matchAll(/'([^']+)'/g)].map((match) => match[1]);
+const commands = new Set([...baseCommands, ...extraCommands]);
 
 const sorted = [...commands].sort((a, b) => a.localeCompare(b));
 
