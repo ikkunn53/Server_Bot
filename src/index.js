@@ -2627,8 +2627,44 @@ client.on('guildMemberAdd', async (member) => {
 });
 
 
+const stickyMessageQueues = new Map();
+
+async function refreshStickyMessage(message) {
+  const channelId = message.channel.id;
+  const previous = stickyMessageQueues.get(channelId) || Promise.resolve();
+  const pending = previous.catch(() => null).then(() => repostStickyMessage(message));
+  stickyMessageQueues.set(channelId, pending);
+  try {
+    await pending;
+  } finally {
+    if (stickyMessageQueues.get(channelId) === pending) {
+      stickyMessageQueues.delete(channelId);
+    }
+  }
+}
+
+async function repostStickyMessage(message) {
+  const stickyMessage = await getGuildSetting(message.guild.id, `sticky_message_${message.channel.id}`);
+  if (stickyMessage) {
+    const stickyMessageId = await getGuildSetting(message.guild.id, `sticky_message_id_${message.channel.id}`);
+    if (stickyMessageId) {
+      await message.channel.messages.delete(stickyMessageId).catch(() => null);
+    }
+    const sent = await message.channel.send(stickyMessage).catch(() => null);
+    if (sent) {
+      await setGuildSetting(message.guild.id, `sticky_message_id_${message.channel.id}`, sent.id);
+    }
+  }
+}
+
 client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.guild) {
+  if (!message.guild || message.author.id === client.user?.id) {
+    return;
+  }
+
+  // Other bots can move the sticky message down, but must not trigger moderation or auto-threads.
+  if (message.author.bot) {
+    await refreshStickyMessage(message);
     return;
   }
 
@@ -2671,17 +2707,7 @@ client.on('messageCreate', async (message) => {
     await message.crosspost().catch(() => null);
   }
 
-  const stickyMessage = await getGuildSetting(message.guild.id, `sticky_message_${message.channel.id}`);
-  if (stickyMessage) {
-    const stickyMessageId = await getGuildSetting(message.guild.id, `sticky_message_id_${message.channel.id}`);
-    if (stickyMessageId) {
-      await message.channel.messages.delete(stickyMessageId).catch(() => null);
-    }
-    const sent = await message.channel.send(stickyMessage).catch(() => null);
-    if (sent) {
-      await setGuildSetting(message.guild.id, `sticky_message_id_${message.channel.id}`, sent.id);
-    }
-  }
+  await refreshStickyMessage(message);
 
   const autoThreadChannels = await getGuildChannelIdSet(message.guild.id, 'autothread_channel_ids_json');
   if (autoThreadChannels.has(message.channel.id) && message.channel.isTextBased() && !message.hasThread) {
