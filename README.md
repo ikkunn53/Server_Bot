@@ -122,6 +122,27 @@ sudo loginctl enable-linger "$(id -un)"
 ./scripts/linux/stop.sh
 ```
 
+root から `bot` ユーザーへ切り替えて操作する場合も、接続用の環境変数を手動指定する必要はありません。スクリプトが実行ユーザーの `/run/user/<UID>/bus` を既定の接続先として使用します。明示的な `XDG_RUNTIME_DIR` と `DBUS_SESSION_BUS_ADDRESS` は保持します。
+
+初回のみ root でユーザーマネージャーを準備してください。
+
+```bash
+loginctl enable-linger bot
+systemctl start "user@$(id -u bot).service"
+```
+
+以降は root から以下の形式で操作できます。`bot` がリポジトリを読み書きでき、Node.js と npm を利用できることが前提です。
+
+```bash
+cd /opt/Discord_Bot/ChannelBot_IK/scripts/linux
+runuser -u bot -- bash ./setup.sh
+runuser -u bot -- bash ./start.sh
+# 停止するとき
+runuser -u bot -- bash ./stop.sh
+```
+
+ユーザーマネージャー自体が動いていない場合、スクリプトは必要な初期設定コマンドを表示して終了します。
+
 起動すると自動起動も有効になり、コンソールや SSH 接続を閉じても動作します。異常終了時は5秒後に再起動し、60秒間に5回を超える失敗では再起動を打ち切ります。停止すると自動起動も無効になり、Bot に SIGTERM を送って既存の SQLite 終了処理を実行します。`npm start` と同時に実行しないでください。
 
 状態・ログ確認:

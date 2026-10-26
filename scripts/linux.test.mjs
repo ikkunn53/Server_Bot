@@ -20,7 +20,7 @@ function fixture(t, {uid = "1000"} = {}) {
   const calls = path.join(temporary, 'calls');
   // Exercise script control flow without installing services on the test host.
   const stubs = {
-    systemctl: 'printf "%s\\n" "$*" >> "$TEST_CALLS"; if [ "${NO_BUS:-}" = 1 ] || { [ "$1" = --user ] && [ "${NO_USER_BUS:-}" = 1 ]; }; then exit 1; fi',
+    systemctl: 'if [ "${CHECK_USER_BUS:-}" = 1 ] && [ "$1" = --user ]; then [ "${XDG_RUNTIME_DIR:-}" = "$EXPECTED_RUNTIME" ] && [ "${DBUS_SESSION_BUS_ADDRESS:-}" = "$EXPECTED_BUS" ] || exit 1; fi; printf "%s\\n" "$*" >> "$TEST_CALLS"; if [ "${NO_BUS:-}" = 1 ] || { [ "$1" = --user ] && [ "${NO_USER_BUS:-}" = 1 ]; }; then exit 1; fi',
     loginctl: 'echo loginctl >> "$TEST_CALLS"; printf "%s\\n" "${LINGER:-yes}"',
     id: 'if [ "$1" = -u ]; then echo "$TEST_UID"; elif [ "$1" = -un ]; then echo testuser; else exit 1; fi',
     mkdir: 'if [ "$*" != "-p -- /etc/systemd/system" ]; then exec /bin/mkdir "$@"; fi',
@@ -114,4 +114,47 @@ test('root setup fails cleanly when the system manager is also unavailable', t =
   assert.equal(existsSync(f.unit), false);
   assert.equal(existsSync(path.join(f.checkout, '.env')), false);
   assert.doesNotMatch(readFileSync(f.calls, 'utf8'), /npm/);
+});
+
+
+test('runuser-style setup, start and stop derive the target user bus without environment variables', t => {
+  const f = fixture(t);
+  const options = {
+    XDG_RUNTIME_DIR: undefined,
+    DBUS_SESSION_BUS_ADDRESS: undefined,
+    CHECK_USER_BUS: '1',
+    EXPECTED_RUNTIME: '/run/user/1000',
+    EXPECTED_BUS: 'unix:path=/run/user/1000/bus',
+  };
+  let result = f.run('setup', options);
+  assert.equal(result.status, 0, result.stderr);
+  writeFileSync(path.join(f.checkout, '.env'), 'DISCORD_TOKEN=test-only-not-a-real-token\n');
+  for (const name of ['start', 'stop']) {
+    result = f.run(name, options);
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
+
+test('explicit runtime and bus settings are preserved', t => {
+  const f = fixture(t);
+  const result = f.run('stop', {
+    XDG_RUNTIME_DIR: '/custom/runtime',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/custom/bus',
+    CHECK_USER_BUS: '1',
+    EXPECTED_RUNTIME: '/custom/runtime',
+    EXPECTED_BUS: 'unix:path=/custom/bus',
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('a custom runtime directory supplies the default bus location', t => {
+  const f = fixture(t);
+  const result = f.run('stop', {
+    XDG_RUNTIME_DIR: '/custom/runtime',
+    DBUS_SESSION_BUS_ADDRESS: undefined,
+    CHECK_USER_BUS: '1',
+    EXPECTED_RUNTIME: '/custom/runtime',
+    EXPECTED_BUS: 'unix:path=/custom/runtime/bus',
+  });
+  assert.equal(result.status, 0, result.stderr);
 });
