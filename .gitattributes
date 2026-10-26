@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Linux service scripts must retain Unix line endings.
+*.sh text eol=lf
