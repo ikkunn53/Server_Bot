@@ -7,6 +7,21 @@ if [[ "$(uname -s)" != Linux ]]; then
   exit 1
 fi
 command -v systemctl >/dev/null || { echo 'systemd が必要です。' >&2; exit 1; }
-command -v loginctl >/dev/null || { echo 'systemd-logind (loginctl) が必要です。' >&2; exit 1; }
-# Fail before making changes when no user service manager is available.
-systemctl --user show-environment >/dev/null
+# Root installs a system service and does not need a user D-Bus session.
+if [[ "$(id -u)" == 0 ]]; then
+  SYSTEMCTL=(systemctl)
+  UNIT_DIR=/etc/systemd/system
+  INSTALL_TARGET=multi-user.target
+  SERVICE_SCOPE=system
+else
+  command -v loginctl >/dev/null || { echo 'systemd-logind (loginctl) が必要です。' >&2; exit 1; }
+  SYSTEMCTL=(systemctl --user)
+  UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  INSTALL_TARGET=default.target
+  SERVICE_SCOPE=user
+fi
+# Fail before changing anything if the selected service manager is unavailable.
+if ! "${SYSTEMCTL[@]}" show-environment >/dev/null; then
+  echo "systemd の ${SERVICE_SCOPE} サービスマネージャーへ接続できません。" >&2
+  exit 1
+fi
