@@ -100,44 +100,70 @@ GUILD_ID=テストまたは運用サーバーのID
 
 ## Linux で常駐実行する
 
-systemd と systemd-logind が動く Linux（Ubuntu / Debian など）では、次のファイルでセットアップ・起動・停止できます。Node.js 20 以上と npm を事前にインストールし、**Bot を実行する一般ユーザーで**操作してください。コンテナなど systemd のない環境にはこの方式は使えません。
+systemd が動く Linux（Ubuntu / Debian など）では、次のファイルでセットアップ・起動・停止できます。Node.js 20 以上と npm を事前にインストールしてください。root ではシステムサービス、一般ユーザーではユーザーサービスとして登録します。セットアップ・起動・停止は同じユーザーで実行してください。root で登録したサービスは root 権限で動きます。コンテナなど systemd のない環境にはこの方式は使えません。
 
 ```bash
 # リポジトリのルートから実行
 ./scripts/linux/setup.sh
 ```
 
-依存関係をインストールして検査し、ユーザーサービス `server-bot.service` を登録します。`.env` がなければ権限を制限して `.env.example` から作成し、既存の `.env` は上書きしません。エディタで `.env` の `DISCORD_TOKEN` を設定してください。サービスはシェルに export した変数を引き継がないため、設定は `.env` に記載します。トークンを Git に追加しないでください。
+依存関係をインストールして検査し、`server-bot.service` を登録します。`.env` がなければ権限を制限して `.env.example` から作成し、既存の `.env` は上書きしません。エディタで `.env` の `DISCORD_TOKEN` を設定してください。サービスはシェルに export した変数を引き継がないため、設定は `.env` に記載します。トークンを Git に追加しないでください。
 
-ログアウト後も継続し、OS の再起動後にも起動するため、一度だけ次を実行します（管理者権限が必要な場合があります）。
+**一般ユーザーの場合のみ**、ログアウト後も継続し、OS の再起動後にも起動するため、一度だけ次を実行します（管理者権限が必要な場合があります）。root では不要です。
 
 ```bash
 sudo loginctl enable-linger "$(id -un)"
 ```
 
-起動・停止はそれぞれ次のファイルを実行します。`sudo` は付けません。
+起動・停止はそれぞれ次のファイルを、セットアップと同じユーザーで実行します。
 
 ```bash
 ./scripts/linux/start.sh
 ./scripts/linux/stop.sh
 ```
 
+root から `bot` ユーザーへ切り替えて操作する場合も、接続用の環境変数を手動指定する必要はありません。スクリプトが実行ユーザーの `/run/user/<UID>/bus` を既定の接続先として使用します。明示的な `XDG_RUNTIME_DIR` と `DBUS_SESSION_BUS_ADDRESS` は保持します。
+
+初回のみ root でユーザーマネージャーを準備してください。
+
+```bash
+loginctl enable-linger bot
+systemctl start "user@$(id -u bot).service"
+```
+
+以降は root から以下の形式で操作できます。`bot` がリポジトリを読み書きでき、Node.js と npm を利用できることが前提です。
+
+```bash
+cd /opt/Discord_Bot/ChannelBot_IK/scripts/linux
+runuser -u bot -- bash ./setup.sh
+runuser -u bot -- bash ./start.sh
+# 停止するとき
+runuser -u bot -- bash ./stop.sh
+```
+
+ユーザーマネージャー自体が動いていない場合、スクリプトは必要な初期設定コマンドを表示して終了します。
+
 起動すると自動起動も有効になり、コンソールや SSH 接続を閉じても動作します。異常終了時は5秒後に再起動し、60秒間に5回を超える失敗では再起動を打ち切ります。停止すると自動起動も無効になり、Bot に SIGTERM を送って既存の SQLite 終了処理を実行します。`npm start` と同時に実行しないでください。
 
 状態・ログ確認:
 
 ```bash
+# root の場合
+systemctl status server-bot.service --no-pager
+journalctl -u server-bot.service -f
+
+# 一般ユーザーの場合
 systemctl --user status server-bot.service --no-pager
 journalctl --user -u server-bot.service -f
 ```
 
 起動コマンドの成功だけで Discord 接続成功とは限りません。ログにコマンド登録と `Logged in as ...` が出て、テストサーバーで `/ping` が応答することを確認してください。必要な Intents と権限は通常の起動時と同じです。
 
-設定やコードを変更した場合は `stop.sh` → `start.sh` で再起動してください。再起動制限に達した場合は原因を解消して `systemctl --user reset-failed server-bot.service` を実行します。リポジトリの移動や Node.js の更新後は `setup.sh` を再実行してください。サービスはセットアップ時の Node.js の絶対パスを使用します。
+設定やコードを変更した場合は `stop.sh` → `start.sh` で再起動してください。再起動制限に達した場合は原因を解消して `systemctl --user reset-failed server-bot.service` を実行します（root では `--user` を外します）。リポジトリの移動や Node.js の更新後は `setup.sh` を再実行してください。サービスはセットアップ時の Node.js の絶対パスを使用します。
 
 作業ディレクトリはリポジトリのルートに固定され、相対指定の DB・バックアップ先もそこを基準にします。既存の DB とバックアップは引き継がれ、停止時にも削除されません。Windows から DB を移す場合は Bot を停止してからコピーし、`DB_PATH` などの Windows ドライブパスを Linux のパスに変更してください。
 
-サービス定義の保存先は `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/server-bot.service` です。同一ユーザーにつき1インスタンスを想定しています。`Failed to connect to bus` が出る場合は、systemd ユーザーセッションのある SSH 等でログインして実行してください。
+サービス定義の保存先は root では `/etc/systemd/system/server-bot.service`、一般ユーザーでは `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/server-bot.service` です。それぞれ1インスタンスを想定し、同じ Bot を両方で起動しないでください。以前のユーザーサービスから切り替える場合は、以前のユーザーで `stop.sh` を実行してから root でセットアップしてください。一般ユーザーで `Failed to connect to bus` が出る場合は、systemd ユーザーセッションのある SSH 等でログインして実行してください。root で同じエラーが出る旧版を使っている場合は、この修正を取得して `setup.sh` を再実行してください。
 
 ## 環境変数
 

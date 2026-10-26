@@ -16,12 +16,11 @@ if [[ ! -e .env ]]; then
 fi
 # Resolve the actual binary, including when Node was installed with nvm/asdf.
 NODE_BIN="$(node -p 'process.execPath')"
-UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 mkdir -p -- "$UNIT_DIR"
 # Let Node escape systemd quoted strings, specifiers and ExecStart environment expansion.
-node --input-type=module - "$PROJECT_DIR" "$NODE_BIN" "$UNIT_DIR/$SERVICE_NAME" <<'JS'
+node --input-type=module - "$PROJECT_DIR" "$NODE_BIN" "$UNIT_DIR/$SERVICE_NAME" "$INSTALL_TARGET" <<'JS'
 import {writeFileSync} from 'node:fs';
-const [root, node, destination] = process.argv.slice(2);
+const [root, node, destination, target] = process.argv.slice(2);
 function quote(value, exec = false) {
   if (/[\r\n\0]/.test(value)) throw new Error('Unsupported newline in path');
   return '"' + value.replaceAll('\\', '\\\\').replaceAll('"', '\\"').replaceAll('%', '%%').replaceAll('$', exec ? '$$' : '$') + '"';
@@ -45,11 +44,12 @@ StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=default.target
+WantedBy=${target}
 `, {mode: 0o600});
 JS
-systemctl --user daemon-reload
-if [[ "$(loginctl show-user "$(id -un)" -p Linger --value)" != yes ]]; then
+"${SYSTEMCTL[@]}" daemon-reload
+if [[ "$SERVICE_SCOPE" == user ]] && [[ "$(loginctl show-user "$(id -un)" -p Linger --value)" != yes ]]; then
   echo "ログアウト後も継続するには、一度だけ次を実行してください: sudo loginctl enable-linger $(id -un)" >&2
 fi
+echo "${SERVICE_SCOPE} サービスとして登録しました。"
 echo 'セットアップ完了。.env を設定後、scripts/linux/start.sh で起動してください。'

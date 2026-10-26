@@ -11,10 +11,10 @@ if (!config.DISCORD_TOKEN || config.DISCORD_TOKEN === 'your-bot-token') {
   process.exit(1);
 }
 JS
-if [[ "$(loginctl show-user "$(id -un)" -p Linger --value)" != yes ]]; then
+if [[ "$SERVICE_SCOPE" == user ]] && [[ "$(loginctl show-user "$(id -un)" -p Linger --value)" != yes ]]; then
   echo "ログアウト後の継続に必要です: sudo loginctl enable-linger $(id -un)" >&2
   exit 1
 fi
-systemctl --user enable --now "$SERVICE_NAME"
+"${SYSTEMCTL[@]}" enable --now "$SERVICE_NAME"
 echo 'サービスを起動しました。Discord 接続の成功はログの Logged in as と /ping で確認してください。'
-systemctl --user status "$SERVICE_NAME" --no-pager
+"${SYSTEMCTL[@]}" status "$SERVICE_NAME" --no-pager
