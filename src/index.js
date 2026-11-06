@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { VOICE_DEPARTURE_SETTINGS, getVoiceDeparturePolicy, getVoiceDepartureDefault, parseVoiceDepartureSetting } from './voice-departure-settings.js';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -83,8 +84,6 @@ const VOICE_LINK_CACHE_TTL_MS = Math.max(
   Number.parseInt(process.env.VOICE_LINK_CACHE_TTL_MS || '30000', 10) || 30000,
 );
 const VOICE_REJOIN_COOLDOWN_MS = 15 * 1000;
-const VOICE_DEPARTURE_WINDOW_MS = 60 * 1000;
-const VOICE_DEPARTURE_TIMEOUT_MS = 5 * 60 * 1000;
 const BOT_VOICE_TRANSITION_TTL_MS = 30 * 1000;
 const BOT_CREATOR = 'IKKUNN53';
 
@@ -227,6 +226,7 @@ const extraCommandBuilders = {
 
 
 const SETTINGS_OPTION_CHOICES = [
+  ...Object.entries(VOICE_DEPARTURE_SETTINGS).map(([value, definition]) => ({ name: definition.label, value })),
   { name: 'lock_message', value: 'lock_message' },
   { name: 'unlock_message', value: 'unlock_message' },
   { name: 'default_category_id', value: 'default_category_id' },
@@ -1049,8 +1049,9 @@ async function recordVoiceDeparture(guildIdValue, userId, now = Date.now()) {
   const queueKey = `${guildIdValue}:${userId}`;
   const previousOperation = voiceDepartureOperationQueues.get(queueKey) || Promise.resolve();
   const operation = previousOperation.catch(() => null).then(async () => {
+    const policy = await getVoiceDeparturePolicy(guildIdValue, getGuildSetting);
     const db = await getDb(guildIdValue);
-    const windowStartedAt = now - VOICE_DEPARTURE_WINDOW_MS;
+    const windowStartedAt = now - policy.windowMinutes * 60 * 1000;
     await db.run(
       'DELETE FROM voice_departures WHERE guild_id = ? AND user_id = ? AND departed_at < ?',
       guildIdValue,
@@ -1068,7 +1069,7 @@ async function recordVoiceDeparture(guildIdValue, userId, now = Date.now()) {
       guildIdValue,
       userId,
     );
-    return Number(result?.count || 0) >= 2;
+    return { ...policy, shouldTimeout: Number(result?.count || 0) >= policy.count };
   });
   voiceDepartureOperationQueues.set(queueKey, operation);
   try {
@@ -2278,6 +2279,12 @@ function safeJsonParse(raw, fallback) {
 }
 
 function formatSettingValue(key, value, guild) {
+  if (Object.hasOwn(VOICE_DEPARTURE_SETTINGS, key)) {
+    const definition = VOICE_DEPARTURE_SETTINGS[key];
+    const parsed = parseVoiceDepartureSetting(key, value);
+    const fallback = getVoiceDepartureDefault(key);
+    return `${parsed ?? fallback.value}${definition.unit}${parsed == null ? `（${fallback.source}）` : ''}`;
+  }
   if (!value) {
     return '`未設定`';
   }
@@ -2729,12 +2736,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     : false;
 
   if (!isBotVoiceTransition && memberId && !newState.member?.user?.bot && oldState.channelId && !newState.channelId) {
-    const shouldTimeout = await recordVoiceDeparture(guildIdValue, memberId).catch((error) => {
+    const departure = await recordVoiceDeparture(guildIdValue, memberId).catch((error) => {
       logOperationError('voiceStateUpdate.recordVoiceDeparture', error, { guildId: guildIdValue, memberId });
-      return false;
+      return null;
     });
-    if (shouldTimeout) {
-      await newState.member.timeout(VOICE_DEPARTURE_TIMEOUT_MS, '1分以内にVCから2回退出したため').catch((error) => {
+    if (departure?.shouldTimeout) {
+      await newState.member.timeout(departure.timeoutMinutes * 60 * 1000, `${departure.windowMinutes}分以内にVCから${departure.count}回以上退出したため`).catch((error) => {
         logOperationError('voiceStateUpdate.applyVoiceDepartureTimeout', error, { guildId: guildIdValue, memberId });
       });
     }
@@ -4284,7 +4291,16 @@ ${body}`);
 
     const key = interaction.options.getString('key', true);
     if (subcommand === 'set') {
-      const value = interaction.options.getString('value', true);
+      let value = interaction.options.getString('value', true);
+      if (Object.hasOwn(VOICE_DEPARTURE_SETTINGS, key)) {
+        const parsed = parseVoiceDepartureSetting(key, value);
+        if (parsed == null) {
+          const definition = VOICE_DEPARTURE_SETTINGS[key];
+          await interaction.reply({ content: `${definition.label}は ${definition.min}〜${definition.max} の整数で指定してください。`, ephemeral: true });
+          return;
+        }
+        value = String(parsed);
+      }
       await setGuildSetting(interaction.guildId, key, value);
       await interaction.reply({ content: `設定 **${key}** を更新しました: ${formatSettingValue(key, value, interaction.guild)}`, ephemeral: true });
       return;

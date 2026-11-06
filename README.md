@@ -28,7 +28,7 @@ Server_Bot は、Discord サーバーのチャンネル管理・チケット運�
 - Join to Create 方式で、一時ボイスチャンネルを自動作成・自動削除できます。
 - 空の一時VCが残った場合の自動掃除・手動掃除・状態診断ができます。
 - ボイスチャンネル参加通知（`/voicelink`）を設定できます。
-- VC退出後15秒間の再参加を防止し、1分以内に2回退出したメンバーへ5分間のタイムアウトを付与します（一時VC作成時のBotによる移動は対象外です）。
+- VC退出後15秒間の再参加を防止し、既定では1分以内に2回退出したメンバーへ5分間のタイムアウトを付与します（回数・判定時間・タイムアウト時間は `/settings` で変更可能）（一時VC作成時のBotによる移動は対象外です）。
 - ウェルカムメッセージ、自動ロール、ボタンロール、リアクションロールなどを管理できます。
 - SQLite に設定やチケット情報を保存します。
 
@@ -172,6 +172,9 @@ journalctl --user -u server-bot.service -f
 | `DISCORD_TOKEN` | はい | なし | Discord Bot Token |
 | `GUILD_ID` | いいえ | なし | 指定するとそのサーバーにギルドコマンドとして即時登録しやすくなります |
 | `LOG_CHANNEL_ID` | いいえ | なし | console ログを転送するテキストチャンネルID |
+| `VOICE_DEPARTURE_COUNT` | いいえ | `2` | VC連続退出の回数。整数1〜1000 |
+| `VOICE_DEPARTURE_WINDOW_MINUTES` | いいえ | `1` | 退出回数を数える時間（分）。整数1〜1440 |
+| `VOICE_DEPARTURE_TIMEOUT_MINUTES` | いいえ | `5` | タイムアウト時間（分）。整数1〜40320 |
 | `PRIVACY_POLICY_URL` | 公開時は必須 | なし | ログイン不要で閲覧できるプライバシーポリシーのURL |
 | `TERMS_OF_SERVICE_URL` | 公開時は必須 | なし | ログイン不要で閲覧できるサービス利用規約のURL |
 | `DB_PATH` | いいえ | `data/{guild_id}/channelbot.db` | SQLite DB の保存先。`{guild_id}` を使うとサーバーごとに分離できます |
@@ -373,6 +376,45 @@ Bot が応答すれば起動できています。
 | `/imageonly` | 画像専用チャンネル切替 |
 | `/autopublish` | アナウンスチャンネル自動公開設定 |
 | `/disable` / `/enable` / `/disabledlist` | コマンド無効化管理 |
+
+## VC 連続退出のタイムアウト設定
+
+サーバー管理権限を持つユーザーは、`/settings` でサーバーごとに設定できます。設定は SQLite に保存され、変更後の退出から再起動なしで反映されます。
+
+| 設定キー | 説明 | 既定値 | 指定範囲（整数） |
+| --- | --- | --- | --- |
+| `voice_departure_count` | タイムアウトを適用する退出回数 | 2回 | 1〜1000回 |
+| `voice_departure_window_minutes` | 退出回数を数える直近の時間 | 1分 | 1〜1440分 |
+| `voice_departure_timeout_minutes` | 付与するタイムアウト時間 | 5分 | 1〜40320分（28日） |
+
+全サーバー共通の初期値は `.env` でも指定できます。
+
+```env
+VOICE_DEPARTURE_COUNT=3
+VOICE_DEPARTURE_WINDOW_MINUTES=3
+VOICE_DEPARTURE_TIMEOUT_MINUTES=10
+```
+
+優先順位は項目ごとに **`/settings` のサーバー個別設定 → 環境変数（`.env`）→ 組み込みの既定値** です。環境変数が範囲外・小数・空文字などの場合は組み込みの既定値を使用します。`.env` の変更後は Bot を再起動してください。シェルやサービスから同名の環境変数を渡している場合は、既存の dotenv の動作に従い、そちらが `.env` より優先されます。`/settings view key:...` では個別設定がない場合に「環境変数」または「既定値」と表示します。
+
+例: 「3分以内に3回退出した場合、10分間タイムアウト」にする設定です。`key` の選択肢には日本語の説明が表示されます。
+
+```text
+/settings set key:voice_departure_count value:3
+/settings set key:voice_departure_window_minutes value:3
+/settings set key:voice_departure_timeout_minutes value:10
+```
+
+設定の確認・サーバー個別設定の解除:
+
+```text
+/settings view key:voice_departure_timeout_minutes
+/settings clear key:voice_departure_timeout_minutes
+```
+
+`clear` は指定した項目のサーバー個別設定を解除します。その後は `.env` の指定値、未指定なら組み込みの既定値を使用します。各 VC 退出時に、設定した直近の判定時間内の退出を数え、VC 間の移動や Bot による一時 VC への移動はカウントしません。VC 退出後15秒間の再参加制限は従来どおりです。
+
+タイムアウトには Bot の Moderate Members 権限と対象メンバーより上位のロールが必要です。新しい設定項目を表示するには、更新後に Bot を再起動してスラッシュコマンドを再登録してください。
 
 ## 一時VC / Join to Create の使い方
 
